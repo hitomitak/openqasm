@@ -71,11 +71,14 @@ class PrintQuest(UnrollerBackend):
         v is a version number.
         """
         self._printCode("#include <stdio.h>");
+        self._printCode("#include <sys/time.h>");
         self._printCode("#include \"QuEST.h\"");
         self._printCode("#define M_PI 3.14159265358979323846");
         self._printCode("int main (int narg, char *varg[]) {");
         self.level += 1
         
+        self._printCode("struct timeval s, e;");
+        self._printCode("gettimeofday(&s, NULL);");
         self._printCode("QuESTEnv env;");
         self._printCode("initQuESTEnv(&env);");
 
@@ -97,8 +100,11 @@ class PrintQuest(UnrollerBackend):
         self._printCode("int %s[%d];" % (self.creg_name, self.creg_size));
     
     def printFooter(self):
+        self._printCode("destroyMultiQubit(%s, env);" %(self.qreg_name));
         self._printCode("for(int i = 0; i < %s; i++) { printf(\"%%d\", %s[i]);}" %(self.creg_size, self.creg_name));
         self._printCode("printf(\"\\n\");");
+        self._printCode("gettimeofday(&e, NULL);");
+        self._printCode("printf(\"time = %lf\\n\", (e.tv_sec - s.tv_sec) + (e.tv_usec - s.tv_usec)*1.0E-6);");
         self.level -= 1
         self._printCode("}")
 
@@ -297,11 +303,14 @@ class PrintQuest(UnrollerBackend):
 
 
 def _main():
+    args = sys.argv;
     #ast = Qasm(filename="qft/qft_n10.qasm").parse()
     #ast = Qasm(filename="quantum_volume/quantum_volume_n5_d2.qasm").parse()
-    ast = Qasm(filename="cc/cc_n10.qasm").parse()
+    #ast = Qasm(filename="cc/cc_n10.qasm").parse()
+
+    ast = Qasm(filename=args[1]).parse()
     
-    qs = open("test.c", 'w')
+    qs = open(args[2], 'w')
     
     printQuest = PrintQuest(qs)
 
