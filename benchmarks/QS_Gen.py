@@ -19,11 +19,11 @@ from qiskit.qasm import Qasm
 if sys.version_info < (3, 0):
     raise Exception("Please use Python version 3 or greater.")
 
-class PrintQuest(UnrollerBackend):
+class PrintQsharp(UnrollerBackend):
     """Backend for the unroller that prints Q# code.
     """
 
-    def __init__(self, file, basis=None):
+    def __init__(self, namespace, operation, file, basis=None):
         super().__init__(basis)
         self.prec = 15
         self.creg = None
@@ -37,6 +37,8 @@ class PrintQuest(UnrollerBackend):
         self.listen = True
         self.in_gate = ""
         self.printed_gates = []
+        self.namespace = namespace
+        self.operation = operation
         self.file = file
         self.level = 0
         
@@ -65,29 +67,30 @@ class PrintQuest(UnrollerBackend):
         """
         self.basis = basis
     
+    def _printHeaderIfNecessary(self):
+        if (not self.print_header and self.qreg_size != 0 and self.creg_size != 0):
+            self._printCode("mutable %s = new Result[%d];" % (self.creg_name, self.creg_size))
+            self._printCode("using (%s = Qubit[%d]) {" % (self.qreg_name, self.qreg_size))
+            self.level += 1
+            self.print_header = True
+
     def version(self, version):
         """Print the version string.
 
         v is a version number.
         """
-        self._printCode("#include <stdio.h>");
-<<<<<<< HEAD
-        self._printCode("#include <sys/time.h>");
-=======
->>>>>>> c8bae301ada7c95b1a855a615d60688b96cbd534
-        self._printCode("#include \"QuEST.h\"");
-        self._printCode("#define M_PI 3.14159265358979323846");
-        self._printCode("int main (int narg, char *varg[]) {");
+        self._printCode("namespace QasmBench." + self.namespace + " {")
         self.level += 1
         
-<<<<<<< HEAD
-        self._printCode("struct timeval s, e;");
-        self._printCode("gettimeofday(&s, NULL);");
-=======
->>>>>>> c8bae301ada7c95b1a855a615d60688b96cbd534
-        self._printCode("QuESTEnv env;");
-        self._printCode("initQuESTEnv(&env);");
-
+        self._printCode("open Microsoft.Quantum.Primitive;");
+        self._printCode("open Microsoft.Quantum.Canon;");
+        self._printCode("open Microsoft.Quantum.Extensions.Math;");
+        
+        self._printCode("operation " + self.operation + "() : Result[] {")
+        self.level += 1
+        
+        self._printCode("body {")
+        self.level += 1
 
     def new_qreg(self, name, size):
         if self.qreg_size != 0:
@@ -95,27 +98,23 @@ class PrintQuest(UnrollerBackend):
         
         self.qreg_name = name;
         self.qreg_size = size;
-        self._printCode("MultiQubit %s;" % self.qreg_name);
-        self._printCode("createMultiQubit(&%s, %d, env);" % (self.qreg_name, self.qreg_size));
+        self._printHeaderIfNecessary()
 
     def new_creg(self, name, size):
         if self.creg_size != 0:
             raise Exception("support only one classical register array")
         self.creg_name = name;
         self.creg_size = size;
-        self._printCode("int %s[%d];" % (self.creg_name, self.creg_size));
+        self._printHeaderIfNecessary()
     
     def printFooter(self):
-<<<<<<< HEAD
-        self._printCode("destroyMultiQubit(%s, env);" %(self.qreg_name));
-        self._printCode("for(int i = 0; i < %s; i++) { printf(\"%%d\", %s[i]);}" %(self.creg_size, self.creg_name));
-        self._printCode("printf(\"\\n\");");
-        self._printCode("gettimeofday(&e, NULL);");
-        self._printCode("printf(\"time = %lf\\n\", (e.tv_sec - s.tv_sec) + (e.tv_usec - s.tv_usec)*1.0E-6);");
-=======
-        self._printCode("for(int i = 0; i < %s; i++) { printf(\"%%d\", %s[i]);}" %(self.creg_size, self.creg_name));
-        self._printCode("printf(\"\\n\");");
->>>>>>> c8bae301ada7c95b1a855a615d60688b96cbd534
+        self.level -= 1
+        self._printCode("}")
+        self._printCode("return %s;" % self.creg_name)
+        self.level -= 1
+        self._printCode("}")
+        self.level -= 1
+        self._printCode("}")
         self.level -= 1
         self._printCode("}")
 
@@ -133,7 +132,7 @@ class PrintQuest(UnrollerBackend):
         pass
     
     def _resolve(self, line):
-        return line.replace("pi", "M_PI")
+        return line.replace("pi", "PI()")
     
     def _printStartIf(self):
         for i in range(self.creg_size):
@@ -142,9 +141,9 @@ class PrintQuest(UnrollerBackend):
             else:
                 self._printCode(" && ", end="", withIndent=False)
             if (1 << i & self.cval == 0):
-                self._printCode("(%s[%d]==0)" % (self.creg_name, i), end="", withIndent=False)
+                self._printCode("(%s[%d]==Zero)" % (self.creg_name, i), end="", withIndent=False)
             else:
-                self._printCode("(%s[%d]==1)" % (self.creg_name, i), end="", withIndent=False)
+                self._printCode("(%s[%d]==One)" % (self.creg_name, i), end="", withIndent=False)
         self._printCode(") {", withIndent=False)
         self.level += 1
         
@@ -166,11 +165,11 @@ class PrintQuest(UnrollerBackend):
                                            qubit[0],
                                            qubit[1]))
             if (arg[0].sym(nested_scope) != 0):
-                self._printCode("rotateZ(%s, %s, %s);" % ( self.qreg_name, qubit[1], self._resolve(str(arg[0].sym(nested_scope)))));
+                self._printCode("Rz(%s, %s[%d]);" % (self._resolve(str(arg[0].sym(nested_scope))), qubit[0], qubit[1]))
             if (arg[1].sym(nested_scope) != 0):
-                self._printCode("rotateY(%s, %s, %s);" % ( self.qreg_name, qubit[1], self._resolve(str(arg[1].sym(nested_scope)))));
+                self._printCode("Ry(%s, %s[%d]);" % (self._resolve(str(arg[1].sym(nested_scope))), qubit[0], qubit[1]))
             if (arg[2].sym(nested_scope) != 0):
-                self._printCode("rotateZ(%s, %s, %s);" % ( self.qreg_name, qubit[1], self._resolve(str(arg[2].sym(nested_scope)))));
+                self._printCode("Rz(%s, %s[%d]);" % (self._resolve(str(arg[2].sym(nested_scope))), qubit[0], qubit[1]))
             
             if self.creg is not None:
                 self._printEndIf()
@@ -189,7 +188,7 @@ class PrintQuest(UnrollerBackend):
                 self._printStartIf()
             
             self._printCode("//CX %s[%d],%s[%d];" % (qubit0[0], qubit0[1], qubit1[0], qubit1[1]))
-            self._printCode("controlledNot(%s, %d, %d);"  % (qubit0[0], qubit0[1], qubit1[1]))
+            self._printCode("CNOT (%s[%d], %s[%d]);"  % (qubit0[0], qubit0[1], qubit1[0], qubit1[1]))
             
             if self.creg is not None:
                 self._printEndIf()
@@ -207,7 +206,7 @@ class PrintQuest(UnrollerBackend):
             self._printStartIf()
             
         self._printCode("//measure %s[%d] -> %s[%d];" % (qubit[0], qubit[1], bit[0], bit[1]))
-        self._printCode("%s[%d] = measure(%s, %d);" % (bit[0], bit[1], qubit[0], qubit[1]));
+        self._printCode("set %s[%d] = M(%s[%d]);" % (bit[0], bit[1], qubit[0], qubit[1]));
         if self.creg is not None:
             self._printEndIf()
 
@@ -314,20 +313,19 @@ class PrintQuest(UnrollerBackend):
 
 
 def _main():
-    args = sys.argv;
-    #ast = Qasm(filename="qft/qft_n10.qasm").parse()
-    #ast = Qasm(filename="quantum_volume/quantum_volume_n5_d2.qasm").parse()
-    #ast = Qasm(filename="cc/cc_n10.qasm").parse()
-
-    ast = Qasm(filename=args[1]).parse()
+    #ast = Qasm(filename="qft/qft_n20.qasm").parse()
+    ast = Qasm(filename="cc/cc_n19.qasm").parse()
     
-    qs = open(args[2], 'w')
+    qs = open("test.qs", 'w')
     
-    printQuest = PrintQuest(qs)
+    qubit = 10
+    name = "QFT"
+    operation = name + str(qubit)
 
-    u = unroll.Unroller(ast, printQuest)
+    printQS = PrintQsharp(name, operation, qs)
+    u = unroll.Unroller(ast, printQS)
     u.execute()
-    printQuest.printFooter()
+    printQS.printFooter()
 
     qs.close()
 
