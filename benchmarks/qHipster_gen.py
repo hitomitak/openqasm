@@ -19,7 +19,7 @@ from qiskit.qasm import Qasm
 if sys.version_info < (3, 0):
     raise Exception("Please use Python version 3 or greater.")
 
-class PrintQuest(UnrollerBackend):
+class PrintqHipster(UnrollerBackend):
     """Backend for the unroller that prints Q# code.
     """
 
@@ -70,18 +70,14 @@ class PrintQuest(UnrollerBackend):
 
         v is a version number.
         """
-        self._printCode("#include <stdio.h>");
         self._printCode("#include <sys/time.h>");
-        self._printCode("#include \"QuEST.h\"");
-        self._printCode("#define M_PI 3.14159265358979323846");
+        self._printCode("#include \"qureg/qureg.hpp\"");
+
         self._printCode("int main (int narg, char *varg[]) {");
         self.level += 1
         
         self._printCode("struct timeval s, e;");
         self._printCode("gettimeofday(&s, NULL);");
-        self._printCode("QuESTEnv env;");
-        self._printCode("initQuESTEnv(&env);");
-
 
     def new_qreg(self, name, size):
         if self.qreg_size != 0:
@@ -89,8 +85,10 @@ class PrintQuest(UnrollerBackend):
         
         self.qreg_name = name;
         self.qreg_size = size;
-        self._printCode("MultiQubit %s;" % self.qreg_name);
-        self._printCode("createMultiQubit(&%s, %d, env);" % (self.qreg_name, self.qreg_size));
+        self._printCode("openqu::mpi::Environment env(narg, varg);");
+        self._printCode("QbitRegister<ComplexDP> %s(%d, \"base\");" % (self.qreg_name, self.qreg_size));
+        self._printCode("%s.specializeon();" % (self.qreg_name));
+
 
     def new_creg(self, name, size):
         if self.creg_size != 0:
@@ -100,7 +98,6 @@ class PrintQuest(UnrollerBackend):
         self._printCode("int %s[%d];" % (self.creg_name, self.creg_size));
     
     def printFooter(self):
-        self._printCode("destroyMultiQubit(%s, env);" %(self.qreg_name));
         self._printCode("for(int i = 0; i < %s; i++) { printf(\"%%d\", %s[i]);}" %(self.creg_size, self.creg_name));
         self._printCode("printf(\"\\n\");");
         self._printCode("gettimeofday(&e, NULL);");
@@ -154,12 +151,14 @@ class PrintQuest(UnrollerBackend):
                                            arg[2].sym(nested_scope),
                                            qubit[0],
                                            qubit[1]))
+            if (abs(arg[0].sym(nested_scope) - 3.14159265358979323846 / 2) < 0.000001 and arg[1].sym(nested_scope) == 0 and arg[2].sym(nested_scope) - 3.14159265358979323846 < 0.000001):
+                self._printCode("%s.applyHadamard(%s);" % ( self.qreg_name, qubit[1]));
             if (arg[0].sym(nested_scope) != 0):
-                self._printCode("rotateZ(%s, %s, %s);" % ( self.qreg_name, qubit[1], self._resolve(str(arg[0].sym(nested_scope)))));
+                self._printCode("%s.applyRotationZ(%s, %s);" % ( self.qreg_name, qubit[1], self._resolve(str(arg[0].sym(nested_scope)))));
             if (arg[1].sym(nested_scope) != 0):
-                self._printCode("rotateY(%s, %s, %s);" % ( self.qreg_name, qubit[1], self._resolve(str(arg[1].sym(nested_scope)))));
+                self._printCode("%s.applyRotationY(%s, %s);" % ( self.qreg_name, qubit[1], self._resolve(str(arg[1].sym(nested_scope)))));
             if (arg[2].sym(nested_scope) != 0):
-                self._printCode("rotateZ(%s, %s, %s);" % ( self.qreg_name, qubit[1], self._resolve(str(arg[2].sym(nested_scope)))));
+                self._printCode("%s.applyRotationZ(%s, %s);" % ( self.qreg_name, qubit[1], self._resolve(str(arg[2].sym(nested_scope)))));
             
             if self.creg is not None:
                 self._printEndIf()
@@ -178,7 +177,7 @@ class PrintQuest(UnrollerBackend):
                 self._printStartIf()
             
             self._printCode("//CX %s[%d],%s[%d];" % (qubit0[0], qubit0[1], qubit1[0], qubit1[1]))
-            self._printCode("controlledNot(%s, %d, %d);"  % (qubit0[0], qubit0[1], qubit1[1]))
+            self._printCode("%s.applyCPauliX(%d, %d);"  % (qubit0[0], qubit0[1], qubit1[1]))
             
             if self.creg is not None:
                 self._printEndIf()
@@ -196,7 +195,7 @@ class PrintQuest(UnrollerBackend):
             self._printStartIf()
             
         self._printCode("//measure %s[%d] -> %s[%d];" % (qubit[0], qubit[1], bit[0], bit[1]))
-        self._printCode("%s[%d] = measure(%s, %d);" % (bit[0], bit[1], qubit[0], qubit[1]));
+        self._printCode("%s[%d] = %s.getClassicalValue(%d);" % (bit[0], bit[1], qubit[0], qubit[1]));
         if self.creg is not None:
             self._printEndIf()
 
@@ -221,11 +220,13 @@ class PrintQuest(UnrollerBackend):
 
         qubit is a (regname, idx) tuple.
         """
+        """
         if "reset" not in self.basis:
             self.basis.append("reset")
         if self.creg is not None:
             self._printCode("if(%s==%d) " % (self.creg, self.cval), end="")
         self._printCode("reset %s[%d];" % (qubit[0], qubit[1]))
+        """
 
     def set_condition(self, creg, cval):
         """Attach a current condition.
@@ -312,11 +313,11 @@ def _main():
     
     qs = open(args[2], 'w')
     
-    printQuest = PrintQuest(qs)
+    printqh = PrintqHipster(qs)
 
-    u = unroll.Unroller(ast, printQuest)
+    u = unroll.Unroller(ast, printqh)
     u.execute()
-    printQuest.printFooter()
+    printqh.printFooter()
 
     qs.close()
 
