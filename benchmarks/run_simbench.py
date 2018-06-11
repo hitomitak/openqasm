@@ -9,6 +9,7 @@ import operator
 
 from qiskit_executor import QiskitExecutor
 from qsharp_executor import QsharpExecutor
+from projectq_executor import ProjectQExecutor
 from executor import Executor
 
 if sys.version_info < (3, 0):
@@ -47,6 +48,8 @@ def run_benchmark(args, qubit):
         executor = Executor( QiskitExecutor(), backend, name, seed);
     elif backend ==  "Qsharp":
         executor = Executor( QsharpExecutor(), backend, name, seed);
+    elif backend ==  "ProjectQ":
+        executor = Executor( ProjectQExecutor(), backend, name, seed);
     #elif backend == "QuEST":
     #    exector = Executor( QuESTxecutor() )
 
