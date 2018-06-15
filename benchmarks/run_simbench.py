@@ -3,7 +3,6 @@ import argparse
 import os.path
 import sys
 import re
-import json
 import glob
 import operator
 
@@ -13,44 +12,64 @@ from application.application_gen import ApplicationGenerator
 if sys.version_info < (3, 0):
     raise Exception("Please use Python version 3 or greater.")
 
+
 def run_from_file(depth, name, qubit, backend, verify):
+    """
+    run simulator from qasm files
+    """
     if depth > 0:
         qasm_files = "qasm/" + name + "/" + name + "_n" + \
                      str(qubit) + "_d" + str(depth) + "*.qasm"
-        pattern1 =  name + "_n" + str(qubit) + \
+        pattern1 = name + "_n" + str(qubit) + \
                           "_d" + str(depth) + r"[^0-9]*\.qasm"
-        pattern2 =  name + "_n" + str(qubit) + "_d" + str(depth) + r"\D.*\.qasm"
+        pattern2 = name + "_n" + str(qubit) + "_d" + str(depth) + r"\D.*\.qasm"
     else:
         qasm_files = "qasm/" + name + "/" + name + "_n" + str(qubit) + "*.qasm"
-        pattern1 =  name + "_n" + str(qubit) + r"[^0-9]*\.qasm"
-        pattern2 =  name + "_n" + str(qubit) + r"\D.*\.qasm"
+        pattern1 = name + "_n" + str(qubit) + r"[^0-9]*\.qasm"
+        pattern2 = name + "_n" + str(qubit) + r"\D.*\.qasm"
 
     qasm_files = glob.glob(qasm_files)
 
     if not qasm_files:
         raise Exception("No qasm file")
 
-
     for qasm in qasm_files:
 
-        ret = None
         if not ((re.search(pattern1, os.path.basename(qasm))) or
                 (re.search(pattern2, os.path.basename(qasm)))):
             continue
-        
-        elapsed = backend.run_simulation(qasm)
+
+        elapsed = backend.run_simulation(filename=qasm)
 
         if elapsed < 0:
-           print("Execution Failed"); 
-           return
+            print("Execution Failed")
+            return
 
         print(name + "," + backend.backend_name + "," + str(qubit) +
               "," + str(depth) + "," + str(elapsed), flush=True)
 
         if verify:
-           backend.verify_result()
+            backend.verify_result(depth, qubit)
 
-#def run_from_script(app, name, backend, verify):
+
+def run_from_script(app, app_arg, backend, verify):
+    """
+    run simulator from qiskit
+    """
+
+    qasm_string = app.gen_application(app_arg)
+    elapsed = backend.run_simulation(qasm_text=qasm_string)
+
+    if elapsed < 0:
+        print("Execution Failed")
+        return
+
+    print(app.name + "," + backend.backend_name + "," + str(app_arg["qubit"]) +
+          "," + str(app_arg["depth"]) + "," + str(elapsed), flush=True)
+
+    if verify:
+        backend.verify_result(app_arg["depth"], app_arg["qubit"])
+
 
 def run_benchmark(args, qubit):
     """
@@ -60,22 +79,25 @@ def run_benchmark(args, qubit):
     backend_name = args.backend
     depth = int(args.depth)
     seed = args.seed
+    app_seed = args.applicationseed
 
     if seed:
         seed = int(seed)
 
-    executor = Executor(backend_name, name, seed);
-    backend = executor.get_backend(backend_name);
+    executor = Executor(backend_name, name, seed)
+    backend = executor.get_backend(backend_name)
 
-    #app = ApplicationGenerator(seed);
-    #gen_app = app.get_app(name);
+    app = ApplicationGenerator(app_seed)
+    gen_app = app.get_app(name)
 
-    #if gen_app:
-    #  run_from_script(app, name, backend, verify);
-    #else: 
-    run_from_file(depth, name, qubit, backend, args.verify)
+    if gen_app:
+        app_arg = {"qubit": qubit, "depth": depth, "seed": app_seed}
+        run_from_script(gen_app, app_arg, backend, args.verify)
+    else:
+        run_from_file(depth, name, qubit, backend, args.verify)
 
     return True
+
 
 def print_qasm_sum(dir_name):
     """
@@ -87,6 +109,8 @@ def print_qasm_sum(dir_name):
 
     file_list = glob.glob(dir_name + "/*.qasm")
     qasm_list = []
+    qubit = 0
+    depth = 0
 
     for each_file in file_list:
         file_name = os.path.basename(each_file)
@@ -95,12 +119,13 @@ def print_qasm_sum(dir_name):
 
         if not match_q:
             raise Exception("Not find file:" + dir_name)
+
         qubit = int(match_q.group(1))
 
         val = filter(lambda bit: bit['qubit'] == qubit, qasm_list)
         val_list = list(val)
 
-        if not len(val_list):
+        if not val_list:
             if match_d:
                 depth = int(match_d.group(1))
                 qasm_list.append({"qubit": qubit, "depth": depth, "count": 1})
@@ -111,7 +136,7 @@ def print_qasm_sum(dir_name):
                 depth = int(match_d.group(1))
                 depth_val = list(filter(lambda dep:
                                         dep["depth"] == depth, val_list))
-                if not len(depth_val):
+                if not depth_val:
                     qasm_list.append({"qubit": qubit,
                                       "depth": depth, "count": 1})
                 else:
@@ -123,6 +148,14 @@ def print_qasm_sum(dir_name):
         tmp_list = sorted(qasm_list, key=operator.itemgetter("qubit", "depth"))
     else:
         tmp_list = sorted(qasm_list, key=operator.itemgetter("qubit"))
+
+    print_qasm_sum_file(dir_name, tmp_list)
+
+
+def print_qasm_sum_file(dir_name, tmp_list):
+    """
+    print qasm files
+    """
 
     print("Application : " + dir_name)
     for each_list in tmp_list:
@@ -136,6 +169,9 @@ def print_qasm_sum(dir_name):
 
 
 def parse_args():
+    """
+    argument parser
+    """
     parser = argparse.ArgumentParser(
         description=("Evaluate the performance of \
                      simulator with and prints a report."))
@@ -150,6 +186,8 @@ def parse_args():
                         default='qiskit_local_qasm_simulator', help='backend name')
     parser.add_argument('-sd', '--seed', default=None,
                         help='the initial seed (int)')
+    parser.add_argument('-as', '--applicationseed', default=None,
+                        help='the seed (int) for application')
     parser.add_argument('-v', '--verify', action='store_true',
                         help='verify simulation results')
     parser.add_argument('-l', '--list', action='store_true',
@@ -177,6 +215,9 @@ def _main():
 
 
 def main():
+    """
+    main function
+    """
     try:
         _main()
     except KeyboardInterrupt:
